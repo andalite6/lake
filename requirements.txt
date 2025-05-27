@@ -4,3 +4,4 @@ aiohttp
 openpyxl
 tqdm
 python-dotenv
+openai migrate
