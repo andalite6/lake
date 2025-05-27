@@ -1,6 +1,5 @@
-import openai migrate
 import streamlit as st
-#import openai
+import openai migrate
 from dotenv import load_dotenv
 import os
 
