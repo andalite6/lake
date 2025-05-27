@@ -1,3 +1,65 @@
+
+import streamlit as st
+import openai
+from dotenv import load_dotenv
+import os
+
+# Load environment variables
+load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+def call_api(file_bytes: bytes, filename: str) -> bytes:
+    """
+    Sends the uploaded file content to the OpenAI API and returns the processed output as bytes.
+    """
+    # Decode file content for API consumption
+    try:
+        content = file_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        # Fallback for binary files or different encodings
+        content = file_bytes.decode("latin-1", errors="ignore")
+
+    # Example ChatCompletion call with the unified system prompt loaded from textdoc
+    system_prompt = """
+You are IMPACTGUARD 3.1, an AI assistant that processes user-uploaded files and returns a transformed output.
+"""
+    response = openai.ChatCompletion.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Process this file ({filename}) and provide a summarized output."},
+            {"role": "user", "content": content}
+        ],
+        temperature=0.7
+    )
+    output_text = response.choices[0].message.content
+    return output_text.encode("utf-8")
+
+def main():
+    st.title("Unified AI Assistant - File Processor")
+
+    uploaded_file = st.file_uploader(
+        "Upload a file to process",
+        type=["txt", "pdf", "docx"]
+    )
+
+    if uploaded_file is not None:
+        st.write(f"**Filename:** {uploaded_file.name}")
+        if st.button("Process File"):
+            with st.spinner("Processing..."):
+                file_bytes = uploaded_file.read()
+                output_bytes = call_api(file_bytes, uploaded_file.name)
+                st.success("Processing complete!")
+                st.download_button(
+                    label="Download Processed Output",
+                    data=output_bytes,
+                    file_name=f"processed_{uploaded_file.name}.txt",
+                    mime="text/plain"
+                )
+
+if __name__ == "__main__":
+    main()
+
 import os
 import argparse
 import asyncio
