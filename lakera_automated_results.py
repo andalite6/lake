@@ -1,63 +1,206 @@
 import streamlit as st
-import openai migrate
+import pandas as pd
+import requests
 from dotenv import load_dotenv
 import os
+import io
+import json
 
 # Load environment variables
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+API_URL = os.getenv("API_URL")
+API_KEY = os.getenv("API_KEY")
 
 def call_api(file_bytes: bytes, filename: str) -> bytes:
     """
-    Sends the uploaded file content to the OpenAI API and returns the processed output as bytes.
+    Sends the raw file bytes to a generic API endpoint and returns the response bytes.
     """
-    # Decode file content for API consumption
-    try:
-        content = file_bytes.decode("utf-8")
-    except UnicodeDecodeError:
-        # Fallback for binary files or different encodings
-        content = file_bytes.decode("latin-1", errors="ignore")
+    if not API_URL:
+        st.error("API_URL is not set in environment variables.")
+        return b""
 
-    # Example ChatCompletion call with the unified system prompt loaded from textdoc
-    system_prompt = """
-You are IMPACTGUARD 3.1, an AI assistant that processes user-uploaded files and returns a transformed output.
-"""
-    response = openai.ChatCompletion.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Process this file ({filename}) and provide a summarized output."},
-            {"role": "user", "content": content}
-        ],
-        temperature=0.7
-    )
-    output_text = response.choices[0].message.content
-    return output_text.encode("utf-8")
+    headers = {}
+    if API_KEY:
+        headers["Authorization"] = f"Bearer {API_KEY}"
+
+    files = {"file": (filename, file_bytes)}
+    response = requests.post(API_URL, headers=headers, files=files)
+    response.raise_for_status()
+    return response.content
+
+def parse_to_dataframe(text: str):
+    """
+    Attempts to parse text into a pandas DataFrame from JSON, JSONL, or CSV.
+    Returns a DataFrame or None if parsing fails.
+    """
+    # Try JSON array
+    try:
+        return pd.read_json(io.StringIO(text), orient='records')
+    except Exception:
+        pass
+    # Try JSON lines
+    try:
+        return pd.read_json(io.StringIO(text), orient='records', lines=True)
+    except Exception:
+        pass
+    # Try CSV
+    try:
+        return pd.read_csv(io.StringIO(text))
+    except Exception:
+        pass
+    return None
 
 def main():
     st.title("Unified AI Assistant - File Processor")
 
     uploaded_file = st.file_uploader(
         "Upload a file to process",
-        type=["txt", "pdf", "docx"]
+        type=["txt", "pdf", "docx", "csv", "xls", "xlsx", "json", "jsonl"]
     )
 
-    if uploaded_file is not None:
+    if uploaded_file:
         st.write(f"**Filename:** {uploaded_file.name}")
-        if st.button("Process File"):
-            with st.spinner("Processing..."):
+        if st.button("Send to API"):
+            with st.spinner("Contacting API..."):
                 file_bytes = uploaded_file.read()
                 output_bytes = call_api(file_bytes, uploaded_file.name)
-                st.success("Processing complete!")
-                st.download_button(
-                    label="Download Processed Output",
-                    data=output_bytes,
-                    file_name=f"processed_{uploaded_file.name}.txt",
-                    mime="text/plain"
-                )
+                if output_bytes:
+                    st.success("Received response from API!")
+                    text = output_bytes.decode('utf-8', errors='ignore')
+                    df = parse_to_dataframe(text)
+
+                    if df is not None:
+                        st.write("### Parsed Data Preview")
+                        st.dataframe(df)
+
+                        # CSV download
+                        csv_bytes = df.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="Download as CSV",
+                            data=csv_bytes,
+                            file_name=f"output_{uploaded_file.name.split('.')[0]}.csv",
+                            mime="text/csv"
+                        )
+
+                        # Excel download
+                        excel_buffer = io.BytesIO()
+                        df.to_excel(excel_buffer, index=False, engine='openpyxl')
+                        excel_buffer.seek(0)
+                        st.download_button(
+                            label="Download as Excel",
+                            data=excel_buffer,
+                            file_name=f"output_{uploaded_file.name.split('.')[0]}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+                    else:
+                        st.write("### Raw Output")
+                        st.text_area("Output", text, height=300)
+                        st.download_button(
+                            label="Download Output Text",
+                            data=text.encode('utf-8'),
+                            file_name=f"output_{uploaded_file.name}.txt",
+                            mime="text/plain"
+                        )
 
 if __name__ == "__main__":
     main()
+# Save to app.py
+with open('/mnt/data/app.py', 'w') as f:
+    f.write("""import streamlit as st
+import pandas as pd
+import requests
+from dotenv import load_dotenv
+import os
+import io
+import json
+
+# Load environment variables
+load_dotenv()
+API_URL = os.getenv("API_URL")
+API_KEY = os.getenv("API_KEY")
+
+def call_api(file_bytes: bytes, filename: str) -> bytes:
+    if not API_URL:
+        st.error("API_URL is not set in environment variables.")
+        return b""
+    headers = {}
+    if API_KEY:
+        headers["Authorization"] = f"Bearer {API_KEY}"
+    files = {"file": (filename, file_bytes)}
+    response = requests.post(API_URL, headers=headers, files=files)
+    response.raise_for_status()
+    return response.content
+
+def parse_to_dataframe(text: str):
+    try:
+        return pd.read_json(io.StringIO(text), orient='records')
+    except:
+        pass
+    try:
+        return pd.read_json(io.StringIO(text), orient='records', lines=True)
+    except:
+        pass
+    try:
+        return pd.read_csv(io.StringIO(text))
+    except:
+        pass
+    return None
+
+def main():
+    st.title("Unified AI Assistant - File Processor")
+
+    uploaded_file = st.file_uploader(
+        "Upload a file to process",
+        type=["txt", "pdf", "docx", "csv", "xls", "xlsx", "json", "jsonl"]
+    )
+
+    if uploaded_file:
+        st.write(f"**Filename:** {uploaded_file.name}")
+        if st.button("Send to API"):
+            with st.spinner("Contacting API..."):
+                file_bytes = uploaded_file.read()
+                output_bytes = call_api(file_bytes, uploaded_file.name)
+                if output_bytes:
+                    st.success("Received response from API!")
+                    text = output_bytes.decode('utf-8', errors='ignore')
+                    df = parse_to_dataframe(text)
+
+                    if df is not None:
+                        st.write("### Parsed Data Preview")
+                        st.dataframe(df)
+
+                        csv_bytes = df.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="Download as CSV",
+                            data=csv_bytes,
+                            file_name=f"output_{uploaded_file.name.split('.')[0]}.csv",
+                            mime="text/csv"
+                        )
+
+                        excel_buffer = io.BytesIO()
+                        df.to_excel(excel_buffer, index=False, engine='openpyxl')
+                        excel_buffer.seek(0)
+                        st.download_button(
+                            label="Download as Excel",
+                            data=excel_buffer,
+                            file_name=f"output_{uploaded_file.name.split('.')[0]}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+                    else:
+                        st.write("### Raw Output")
+                        st.text_area("Output", text, height=300)
+                        st.download_button(
+                            label="Download Output Text",
+                            data=text.encode('utf-8'),
+                            file_name=f"output_{uploaded_file.name}.txt",
+                            mime="text/plain"
+                        )
+
+if __name__ == "__main__":
+    main()
+""")
+st.write("Streamlit app template updated as `app.py`.")
+
 
 import os
 import argparse
