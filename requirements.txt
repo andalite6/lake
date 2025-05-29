@@ -1,14 +1,5 @@
 streamlit
-openai
-aiohttp
+requests
+pandas
 openpyxl
-tqdm
 python-dotenv
-openai migrate
-import streamlit as st
-import pandas as pd
-import requests
-from dotenv import load_dotenv
-import os
-import io
-import json
